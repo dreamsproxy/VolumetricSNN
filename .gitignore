@@ -1,0 +1,10 @@
+reverse*/
+COLMAP*/
+dataset/
+extracted_data/
+brick/
+tools/
+*__pycache__*
+**.npy
+**.json
+test_files/
