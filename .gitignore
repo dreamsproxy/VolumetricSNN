@@ -7,4 +7,12 @@ tools/
 *__pycache__*
 **.npy
 **.json
+<<<<<<< HEAD
 test_files/
+**earthshot
+DepthVIT/**
+AdversaryGBA/**
+**.h5
+=======
+test_files/
+>>>>>>> parent of 5293ee5 (Fix)
