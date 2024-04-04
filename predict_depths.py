@@ -89,15 +89,12 @@ while traverse_index < len(files_list):
         matched_keypoints1_3 = np.float32([keypoints1[m.queryIdx].pt for m in matches_1_3]).reshape(-1, 1, 2)
         matched_keypoints3_3 = np.float32([keypoints3[m.trainIdx].pt for m in matches_1_3]).reshape(-1, 1, 2)
 
-        #print(matched_keypoints1_2[0][0])
-        #print(type(matched_keypoints1_2[0][0]))
-        #raise
-
         m1_2 = matched_keypoints1_2.shape[0]
         m2_2 = matched_keypoints2_2.shape[0]
         m2_3 = matched_keypoints2_3.shape[0]
         m1_3 = matched_keypoints1_3.shape[0]
         m3_3 = matched_keypoints3_3.shape[0]
+        
         compare_list = [m1_2, m2_2, m2_3, m1_3, m3_3]
         trim = min(compare_list)
         matched_keypoints1_2 = matched_keypoints1_2[:trim]
