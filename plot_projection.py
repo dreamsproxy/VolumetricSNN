@@ -110,18 +110,6 @@ if __name__ == "__main__":
     #ax.set_zlabel('Z')
     #ax.set_box_aspect([1, 1, 1])
 
-    img1 = cv2.imread("dataset/preprocessing/BRICK/IMAGES/P_20230605_181935.jpg")
-    img1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
-    #img = cv2.resize(img, (100, 100))
-    img2 = cv2.imread("dataset/preprocessing/BRICK/IMAGES/P_20230605_181936.jpg")
-    img2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
-    stereo = cv2.StereoBM_create(numDisparities=16, blockSize=15)
-    disparity = stereo.compute(img1, img2)
-    plt.imshow(disparity,'gray')
-    plt.show()
-    
-    raise
-
     scatter_files = glob("./brick/*.txt")
     x = []
     y = []

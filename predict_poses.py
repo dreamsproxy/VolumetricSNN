@@ -7,6 +7,7 @@ import os
 import json
 import tqdm
 import pandas as pd
+import pickle
 
 """def show_matches(img1, img2):
     final_img = cv2.drawMatches(query_img,
@@ -52,42 +53,19 @@ def euler_to_rotation_matrix(rotation):
     return rotation_matrix
 
 
-def estimate(img1_path, img2_path, n_features, focal_length, resize = False):
-    query_img = cv2.imread(img1_path)
-    train_img = cv2.imread(img2_path)
-    size = (query_img.shape[0], query_img.shape[0])
+def estimate(img1_path, img2_path, img3_path, n_features, focal_length, resize = False):
+    img1 = cv2.imread(img1_path)
+    img2 = cv2.imread(img2_path)
+    img3 = cv2.imread(img3_path)
+    size = (img1.shape[0], img1.shape[0])
     #if resize:
-    query_img = cv2.resize(query_img, (1000, 1000))
-    train_img = cv2.resize(train_img, (1000, 1000))
+    img1 = cv2.resize(img1, (1000, 1000))
+    img2 = cv2.resize(img2, (1000, 1000))
+    img3 = cv2.resize(img3, (1000, 1000))
 
-    query_img_bw = cv2.cvtColor(query_img, cv2.COLOR_BGR2GRAY)
-    train_img_bw = cv2.cvtColor(train_img, cv2.COLOR_BGR2GRAY)
-
-    orb = cv2.SIFT_create(nfeatures = n_features)
-
-    queryKeypoints, queryDescriptors = orb.detectAndCompute(query_img,None)
-    trainKeypoints, trainDescriptors = orb.detectAndCompute(train_img,None)
-
-    matcher = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
-    matches = matcher.match(queryDescriptors,trainDescriptors)
-    matches = sorted(matches, key=lambda x: x.distance)
-    #num_good_matches = int(len(distance_matches) * 0.1)
-    #good_matches = matches[:num_good_matches]
-    #depth = 1.0 - (len(good_matches) / num_good_matches)
-    
-    # Get matched keypoints
-    matched_keypoints1 = np.float32([queryKeypoints[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
-    matched_keypoints2 = np.float32([trainKeypoints[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
-
-    m1 = matched_keypoints1.shape[0]
-    m2 = matched_keypoints2.shape[0]
-    compare_list = [m1, m2]
-    trim = min(compare_list)
-    matched_keypoints1 = matched_keypoints1[:trim]
-    matched_keypoints2 = matched_keypoints2[:trim]
-    
-    # Calculate the fundamental matrix
-    fundamental_matrix, _ = cv2.findFundamentalMat(matched_keypoints1, matched_keypoints2, cv2.FM_RANSAC)
+    gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+    gray3 = cv2.cvtColor(img3, cv2.COLOR_BGR2GRAY)
 
     principal_point_y = size[0]//2
     principal_point_x = size[1]//2
@@ -97,16 +75,64 @@ def estimate(img1_path, img2_path, n_features, focal_length, resize = False):
                             [0, focal_length, principal_point_y],
                             [0, 0, 1]])
 
-    #essential_matrix, _ = cv2.findEssentialMat(matched_keypoints1, matched_keypoints2, camera_matrix, cv2.RANSAC, 0.999, 1.0)
-    essential_matrix = np.dot(np.dot(camera_matrix.T, fundamental_matrix), camera_matrix)
+    sift = cv2.SIFT_create(nfeatures = n_features)
+
+    img1_kp, img1_desc = sift.detectAndCompute(img1,None)
+    img2_kp, img2_desc = sift.detectAndCompute(img2,None)
+    img3_kp, img3_desc = sift.detectAndCompute(img3,None)
+
+    matcher = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
+
+    # img 1 and 2
+    matches_1_2 = matcher.match(img1_desc, img2_desc)
+    matches_1_2 = sorted(matches_1_2, key=lambda x: x.distance)
+
+    # img 2 and 3
+    matches_2_3 = matcher.match(img2_desc, img3_desc)
+    matches_2_3 = sorted(matches_2_3, key=lambda x: x.distance)
+
+    # img 1 and 3
+    matches_1_3 = matcher.match(img1_desc, img3_desc)
+    matches_1_3 = sorted(matches_1_3, key=lambda x: x.distance)
+
+    m1_2 = matches_1_2.shape[0]
+    m2_3 = matches_1_2.shape[0]
+    m1_3 = matches_1_3.shape[0]
+    
+    compare_list = [m1_2, m2_3, m1_3]
+    trim = min(compare_list)
+    matches_1_2 = matches_1_2[:trim]
+    matches_2_3 = matches_2_3[:trim]
+    matches_1_3 = matches_1_3[:trim]
+
+    # Calculate the fundamental matrix
+    fmat_1_2, _ = cv2.findFundamentalMat(matches_1_2, matches_1_2, cv2.FM_RANSAC)
+    fmat_2_3, _ = cv2.findFundamentalMat(matches_2_3, matches_2_3, cv2.FM_RANSAC)
+    fmat_1_3, _ = cv2.findFundamentalMat(matches_1_3, matches_1_3, cv2.FM_RANSAC)
+
+    #emat_1_2, _ = cv2.findEssentialMat(img1_kp, img2_kp, camera_matrix, cv2.RANSAC, prob=0.999, threshold=1.0, maxIters=2048)
+    #emat_2_3, _ = cv2.findEssentialMat(img2_kp, img3_kp, camera_matrix, cv2.RANSAC, prob=0.999, threshold=1.0, maxIters=2048)
+    #emat_1_3, _ = cv2.findEssentialMat(img1_kp, img3_kp, camera_matrix, cv2.RANSAC, prob=0.999, threshold=1.0, maxIters=2048)
+
+    emat_1_2 = np.dot(np.dot(camera_matrix.T, fmat_1_2), camera_matrix)
+    emat_2_3 = np.dot(np.dot(camera_matrix.T, fmat_2_3), camera_matrix)
+    emat_1_3 = np.dot(np.dot(camera_matrix.T, fmat_1_3), camera_matrix)
     
     # Step 4: Decompose the essential matrix
-    retval, rotation, translation, mask = cv2.recoverPose(essential_matrix, matched_keypoints1, matched_keypoints2, camera_matrix)
-    #print(rotation)
-    #print(translation)
-    #origin_pos = np.hstack((np.eye(3), np.zeros((3, 1))))
+    _, r_1_2, t_1_2, mask_1_2 = cv2.recoverPose(emat_1_2, img1_kp, img2_kp, camera_matrix)
+    _, r_2_3, t_2_3, mask_2_3 = cv2.recoverPose(emat_2_3, img2_kp, img3_kp, camera_matrix)
+    _, r_1_3, t_1_3, mask_1_3 = cv2.recoverPose(emat_1_3, img1_kp, img3_kp, camera_matrix)
     
-    return translation, rotation, fundamental_matrix, essential_matrix
+    pmat_1_2 = np.hstack((r_1_2, t_1_2))
+    pmat_2_3 = np.hstack((r_2_3, t_2_3))
+    pmat_1_3 = np.hstack((r_1_3, t_1_3))
+
+    # Pack the data
+    data_1_2 = [t_1_2, r_1_2, fmat_1_2, emat_1_2, pmat_1_2, matches_1_2]
+    data_2_3 = [t_2_3, r_2_3, fmat_2_3, emat_2_3, pmat_2_3, matches_2_3]
+    data_1_3 = [t_1_3, r_1_3, fmat_1_3, emat_1_3, pmat_1_3, matches_1_3]
+    
+    return data_1_2, data_2_3, data_1_3
 
 def t_preprocessor(t_array, focal_length):
     translation = str(t_array).replace("\n", "")
@@ -115,9 +141,7 @@ def t_preprocessor(t_array, focal_length):
     translation = translation.replace("]", "")
     translation = (translation).split(" ")
     translation = [np.float32(x) for x in translation if x != '']
-    #emulated_distance = np.linalg.norm(translation)
-    #true_distance = emulated_distance * focal_length
-    
+
     return translation
 
 def r_preprocessor(r_array):
@@ -131,38 +155,58 @@ def preprocess_pandas(filepath1, filepath2, t, r, fundamental_matrix, essential_
     pass
 
 def estimate_first(dir):
-    image_paths = glob(dir)
-    #image_paths = image_paths[:len(image_paths)//4]
+    image_paths = glob(dir + "*.jpg")
     image_paths = image_paths
 
     tr_dict = {}
-    focal_length_set = np.arange(4.0, 6.0, 0.5)
-    focal_length = np.mean(focal_length_set)
-    pbar = tqdm.tqdm(total=len(image_paths), leave = True)
-    #dataframe = pd.DataFrame()
-    cols = ["correlation", "translation", "rotation", "fundamental matrix", "essential matrix"]
-    data = []
-    
-    for idx, image in enumerate(image_paths):
-        temp_dict = {}
-        relation_dict = {}
-        if str(image_paths[0]) != str(image_paths[idx]):
-            t, r, f_matrix, e_matrix = estimate(image_paths[0], image_paths[idx], 2048, focal_length, resize = False)
-            t = t.tolist()
-            r = r.tolist()
-            f_matrix = f_matrix.tolist()
-            e_matrix = e_matrix.tolist()
+    focal_length = 20.45
+    pbar = tqdm.tqdm(total=len(image_paths)*len(image_paths), leave = True)
+    cols = ["correlation", "translation", "rotation", "fundamental matrix", "essential matrix", "norm_dist", "calc_dist"]
 
-            data.append([image_paths[idx].replace("\\", "/"), t, r, f_matrix, e_matrix])
-        pbar.update(1)
-    data = pd.DataFrame(data, columns=cols)
-    #df = estimate_first("dataset/preprocessing/BRICK/IMAGES/*.jpg")
-    save_name = f"{os.path.basename(image_paths[0])}.csv"
-    data.to_csv(save_name, index=False)
-    return data
+    dump_dict = {}
+    for i1, p1 in enumerate(image_paths):
+        data = []
+        temp_dict = {}
+        temp_dict['path'] = p1.replace("\\", "/")
+        relation_dict = {}
+        for i2, p2 in enumerate(image_paths):
+            if str(image_paths[i1]) != str(image_paths[i2]):
+                d1, d2, d3 = estimate(image_paths[i1], image_paths[i2], 2048, focal_length, resize = False)
+                t, r, f_matrix, e_matrix, p_matrix, matches = d1
+                emulated_dist = np.linalg.norm(t)
+                true_dist = emulated_dist * focal_length
+                t = t_preprocessor(t, focal_length)
+                r = r_preprocessor(r)
+                relation_dict[i2] = {
+                        'full path' : p2.replace("\\", "/"),
+                        'translation' : str(t),
+                        'rotation' : str(r).replace("\n", ""),
+                        'virtual baseline' : str(emulated_dist),
+                        'true baseline' : str(true_dist),
+                        'projection matrix' : str(p_matrix)
+                    }
+                temp_dict['relations'] = relation_dict
+                dump_dict[p1] = temp_dict
+                matched_keypoints = [(match.queryIdx, match.trainIdx) for match in matches]
+                
+                #keypoints = map(bytes, keypoints)
+                p1 = str(os.path.basename(p1)).replace(".jpg", "")
+                p2 = str(os.path.basename(p2)).replace(".jpg", "")
+                # Save the matched keypoints to a file using pickle
+                with open(f"{dir}/{p1}-{p2}-matched.pickle", mode="wb") as f:
+                    pickle.dump(matched_keypoints, f)
+                pbar.update(1)
+
+        data = pd.DataFrame(data, columns=cols)
+        save_name = f"{dir}{os.path.basename(p1)}.csv"
+        data.to_csv(save_name, index=False)
+        json_obj = json.dumps(dump_dict, indent=4)
+    
+        with open("./dataset/room test.json", "w") as jfile:
+            jfile.write(json_obj)
+        
 
 def estimate_dir(dir, n_features, resize_bool, trim_dataset = 0):
-    
     if trim_dataset >=1:
         files_list = glob(dir)[:trim_dataset]
     else:
@@ -171,7 +215,7 @@ def estimate_dir(dir, n_features, resize_bool, trim_dataset = 0):
     tr_dict = {}
     focal_length_set = np.arange(4.0, 6.0, 0.5)
     focal_length = np.mean(focal_length_set)
-    pbar = tqdm.tqdm(total=len(files_list), leave = True)
+    pbar = tqdm.tqdm(total=len(files_list)*len(files_list), leave = True)
     
     for root_idx, img1 in enumerate(files_list):
         #print(img1)
@@ -180,10 +224,11 @@ def estimate_dir(dir, n_features, resize_bool, trim_dataset = 0):
         relation_dict = {}
         for sub_idx, img2 in enumerate(files_list):
             if str(img1) != str(img2):
-                t, r, focal_length, proj_mat = estimate(img1, img2, n_features, focal_length, resize=resize_bool)
-                t, emulated_dist, true_dist = t_preprocessor(t, focal_length)
+                t, r, focal_length, proj_mat = estimate(img1, img2, n_features, focal_length, resize = resize_bool)
+                t = t_preprocessor(t, focal_length)
                 r = r_preprocessor(r)
-                
+                emulated_dist = np.linalg.norm(t)
+                true_dist = emulated_dist * focal_length
                 relation_dict[sub_idx] = {
                         'full path' : img2.replace("\\", "/"),
                         'translation' : str(t),
@@ -194,8 +239,8 @@ def estimate_dir(dir, n_features, resize_bool, trim_dataset = 0):
                     }
 
                 temp_dict['relations'] = relation_dict
-                #pbar.update(1)
-        break
+                pbar.update(1)
+        
         pbar.update(1)
         tr_dict[root_idx] = temp_dict
     
@@ -281,25 +326,23 @@ def create_depthmap(pair_list):
     return depth_data
 
 if __name__ == "__main__":
-    """
-    relative_dict, focal_length = estimate_dir(
-        "dataset/preprocessing/BRICK/IMAGES/*.jpg",
+    df = estimate_first("dataset/room test/")
+
+    """relative_dict, focal_length = estimate_dir(
+        "dataset/room test/*.jpg",
         n_features = 2048,
         resize_bool = True,
-        trim_dataset = 20
+        trim_dataset = 0
     )
-    """
-    df = estimate_first("dataset/preprocessing/BRICK/IMAGES/*.jpg")
-    #df.to_csv("test.csv")
-    # 
-    # json_obj = json.dumps(relative_dict, indent=4)
+    df = estimate_dir("dataset/room test/")
     
-    #with open("./BRICK.json", "w") as jfile:
-    #    jfile.write(json_obj)
+    json_obj = json.dumps(relative_dict, indent=4)
     
-    #del relative_dict
-    #del json_obj
-    """
+    with open("./room test.json", "w") as jfile:
+        jfile.write(json_obj)
+    
+    del relative_dict
+    del json_obj
     focal_length = np.mean(np.arange(4.0, 6.0, 0.2))
     smallest_pairs = get_smallest_truebaseline("./BRICK.json")
     depthmaps = create_depthmap(smallest_pairs, focal_length)
